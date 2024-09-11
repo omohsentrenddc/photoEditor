@@ -2,6 +2,7 @@ package com.example.photoeditorcompose
 
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -28,12 +29,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
 import com.example.photoeditorcompose.ui.theme.PhotoEditorComposeTheme
 import com.example.photoeditorcompose.viewmodel.MainViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import ly.img.android.pesdk.PhotoEditorSettingsList
 import ly.img.android.pesdk.backend.model.EditorSDKResult
+import ly.img.android.pesdk.backend.model.constant.OutputMode
 import ly.img.android.pesdk.backend.model.state.LoadSettings
+import ly.img.android.pesdk.backend.model.state.PhotoEditorSaveSettings
 import ly.img.android.pesdk.ui.activity.PhotoEditorActivityResultContract
+import ly.img.android.serializer._3.IMGLYFileWriter
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     val viewModel : MainViewModel by viewModels()
@@ -45,10 +54,30 @@ class MainActivity : ComponentActivity() {
             val editorLauncher = rememberLauncherForActivityResult(
                 contract = PhotoEditorActivityResultContract(),
                 onResult = { result ->
+                    result.settingsList.use { settingsList ->
+//                        val file = File( Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+//                            .toString()+"/testing.json" )
+//                        if (file.exists()) {
+//                            file.delete()
+//                        }
+//                        file.createNewFile()
+                        viewModel.jsonResult = IMGLYFileWriter(settingsList).writeJsonAsString()
+                        Log.d(TAG, "onCreateDone: $result")
+                        // Serialize the settingsList as JSON into the file
+//                        IMGLYFileWriter(settingsList).writeJson(file)
+                        // val result = activity.contentResolver.openInputStream(file.toUri())
+                        // print("result:${result}")
+                        lifecycleScope.launch {
+                            showMessage("Serialisation saved successfully")
+                        }
+
+                    }
                     when (result.resultStatus) {
                         EditorSDKResult.Status.CANCELED -> showMessage("Editor cancelled")
                         EditorSDKResult.Status.EXPORT_DONE -> showMessage("Result saved at ${result.resultUri}")
+//                        EDITOR_REQUEST_CODE -> showMessage("Result saved at ${result.resultUri}")
                         else -> {
+
                         }
                     }
                 }
@@ -69,6 +98,15 @@ class MainActivity : ComponentActivity() {
                                 // Set the source as the Uri of the image to be loaded
                                 it.source = Uri.parse( "https://letsenhance.io/static/03620c83508fc72c6d2b218c7e304ba5/11499/UpscalerAfter.jpg" )
                             }
+                            .configure<PhotoEditorSaveSettings> {
+                                it.outputMode = OutputMode.EXPORT_ALWAYS
+                            }
+                            .configure<PhotoEditorSaveSettings> {
+                                val file = File(cacheDir, "imgly_photo.jpg")
+                                it.setOutputToUri(Uri.fromFile(file))
+                            }
+
+
                         editorLauncher.launch(settingsList)
                         // Release the SettingsList once done
                         settingsList.release()
