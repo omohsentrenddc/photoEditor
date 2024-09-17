@@ -6,21 +6,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.photoeditorcompose.model.ImageModel
-import com.example.photoeditorcompose.model.ImageModelRequest
+import com.example.photoeditorcompose.model.EditImageModelRequest
 import com.example.photoeditorcompose.model.ImageResponse
 import com.example.photoeditorcompose.network.RetrofitInstance
 import kotlinx.coroutines.launch
 import okhttp3.MediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
 
 class MainViewModel : ViewModel() {
-    var jsonResult: String = ""
-    var file : File? = null
+    var fileUpdateFromEditor: File? = null
+
+    //    var jsonResult: String = ""
+    var file: File? = null
     private val apiService = RetrofitInstance.api
     val images: MutableState<List<ImageModel>> = mutableStateOf(ImageResponse().images)
-    private  val TAG = "MainViewModel"
+    private val TAG = "MainViewModel"
     fun getImages() {
         Log.d(TAG, "getImages: ")
         viewModelScope.launch {
@@ -37,21 +41,79 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    fun saveImage(){
-        if(file != null && jsonResult.isNotEmpty()){
+    fun editImage(jsonResult: String) {
+        if (fileUpdateFromEditor != null && jsonResult.isNotEmpty()) {
             viewModelScope.launch {
-                try {
-                    val requestFile = RequestBody.create(MediaType.parse("image/*"), file)
-                    val imagePart = MultipartBody.Part.createFormData("image", file!!.name, requestFile)
-                    val response = apiService.submitImage(ImageModelRequest(text = jsonResult),imagePart)
-                    Log.d(TAG, "getImages: here ${response.status}")
-                    if (response.images.isNotEmpty())
-                        images.value = response.images
+                fileUpdateFromEditor?.let {
+                    try {
+                        val requestFile = it.asRequestBody("image/*".toMediaTypeOrNull())
+                        val imagePart =
+                            MultipartBody.Part.createFormData("newImage", it.name, requestFile)
+                        val response = apiService.editImage(
+                            EditImageModelRequest(text = jsonResult, id = 1),
+                            imagePart
+                        )
+                        Log.d(TAG, "getImages: here ${response.status}")
+                        if (response.images.isNotEmpty())
+                            images.value = response.images
 
-                } catch (e: Exception) {
-                    // Handle errors here
-                    Log.d(TAG, "getImages: ${e.message}")
+                    } catch (e: Exception) {
+                        // Handle errors here
+                        Log.d(TAG, "getImages: ${e.message}")
+                    }
                 }
+
+            }
+        }
+    }
+
+    fun createPartFromString(descriptionString: String): RequestBody {
+        return RequestBody.create("text/plain".toMediaTypeOrNull(), descriptionString)
+    }
+
+    fun getEditImageRequestBody(model: EditImageModelRequest): Map<String, RequestBody> {
+        val map = mutableMapOf<String, RequestBody>()
+
+        // Assuming EditImageModelRequest has fields like "title", "description", etc.
+        map["text"] = createPartFromString(model.text)
+
+        // Add other fields from EditImageModelRequest similarly
+        return map
+    }
+
+
+    fun saveImage(jsonResult: String, oldImage: File) {
+        Log.d(TAG, "saveImage: ")
+        if (fileUpdateFromEditor != null) {
+            Log.d(TAG, "saveImage: not null")
+            viewModelScope.launch {
+                Log.d(TAG, "saveImage: launch")
+                fileUpdateFromEditor?.let {
+                    Log.d(TAG, "saveImage: files")
+                    try {
+                        if(oldImage.exists()) Log.d(TAG, "saveImage: Exist Old")
+                        if(fileUpdateFromEditor!!.exists()) Log.d(TAG, "saveImage: Exist New")
+                        val oldImageFile = RequestBody.create("image/*".toMediaTypeOrNull(), oldImage)
+                        val newImageFile = RequestBody.create("image/*".toMediaTypeOrNull(), fileUpdateFromEditor!!)
+
+                        val oldImagePart =
+                            MultipartBody.Part.createFormData("oldImage", it.name, oldImageFile)
+                        val newImagePart =
+                            MultipartBody.Part.createFormData("newImage", it.name, newImageFile)
+                        val response = apiService.saveImage(getEditImageRequestBody(
+                            EditImageModelRequest(text = jsonResult)),
+                            oldImagePart,newImagePart
+                        )
+                        Log.d(TAG, "getImages: here ${response.status}")
+                        if (response.images.isNotEmpty())
+                            images.value = response.images
+
+                    } catch (e: Exception) {
+                        // Handle errors here
+                        Log.d(TAG, "getImages: ${e.message}")
+                    }
+                }
+
             }
         }
     }
