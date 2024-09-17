@@ -99,7 +99,7 @@ class PickImageActivity : AppCompatActivity() {
                                 }
 
                             }
-                        } else {
+                        } else if (viewModel.imageModel != null) {
                             viewModel.editImage(viewModel.imageModel?.id!!, jsonString)
                         }
 
@@ -196,6 +196,11 @@ class PickImageActivity : AppCompatActivity() {
             }
 
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        viewModel.imageModel = null
     }
 
 
