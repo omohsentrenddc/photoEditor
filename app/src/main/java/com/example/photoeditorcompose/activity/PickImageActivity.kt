@@ -1,19 +1,21 @@
-package com.example.photoeditorcompose
+package com.example.photoeditorcompose.activity
 
 import android.content.ContentResolver
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -23,13 +25,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,37 +38,45 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import coil.compose.rememberAsyncImagePainter
-import coil.compose.rememberImagePainter
-import com.example.photoeditorcompose.ui.theme.PhotoEditorComposeTheme
+import com.example.photoeditorcompose.R
+import com.example.photoeditorcompose.model.ImageModel
 import com.example.photoeditorcompose.viewmodel.MainViewModel
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import ly.img.android.pesdk.PhotoEditorSettingsList
 import ly.img.android.pesdk.backend.model.EditorSDKResult
 import ly.img.android.pesdk.backend.model.constant.OutputMode
 import ly.img.android.pesdk.backend.model.state.LoadSettings
 import ly.img.android.pesdk.backend.model.state.PhotoEditorSaveSettings
 import ly.img.android.pesdk.ui.activity.PhotoEditorActivityResultContract
+import ly.img.android.serializer._3.IMGLYFileReader
 import ly.img.android.serializer._3.IMGLYFileWriter
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 
-class MainActivity : ComponentActivity() {
-    val viewModel : MainViewModel by viewModels()
+class PickImageActivity : AppCompatActivity() {
+    val viewModel: MainViewModel by viewModels()
     var imageSelected: Uri? = null;
+
+    private val TAG = "PickImageActivity"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+
         enableEdgeToEdge()
         setContent {
+            val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+            LaunchedEffect(key1 = viewModel.isEdit) {
+                if (viewModel.isEdit.value)
+                    backDispatcher?.onBackPressed()
+            }
             val context = LocalContext.current
             val editorLauncher = rememberLauncherForActivityResult(
                 contract = PhotoEditorActivityResultContract(),
@@ -82,15 +88,21 @@ class MainActivity : ComponentActivity() {
 //                            file.delete()
 //                        }
 //                        file.createNewFile()
-                        val jsonString = IMGLYFileWriter(settingsList).writeJsonAsString()
+                        val jsonString = IMGLYFileWriter(settingsList)
+                            .writeJsonAsString()
                         Log.d(TAG, "onCreateDone: $result")
-                        imageSelected?.let { selectImage ->
-                            val file = uriToFile(context,selectImage)
-                            file?.let {
-                                viewModel.saveImage(jsonString,file)
-                            }
+                        if (imageSelected != null) {
+                            imageSelected?.let { selectImage ->
+                                val file = uriToFile(context, selectImage)
+                                file?.let {
+                                    viewModel.saveImage(jsonString, file)
+                                }
 
+                            }
+                        } else {
+                            viewModel.editImage(viewModel.imageModel?.id!!, jsonString)
                         }
+
 
                         // Serialize the settingsList as JSON into the file
 //                        IMGLYFileWriter(settingsList).writeJson(file)
@@ -111,20 +123,55 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             )
+            val imageModel by remember {
+                mutableStateOf(ImageModel())
+            }
+            viewModel.imageModel = null
+            viewModel.isEdit.value = false
+            if (intent != null && intent.hasExtra("id")) {
+                imageModel.id = intent.getIntExtra("id", 0)
+                imageModel.newImage = intent.getStringExtra("newImage")!!
+                imageModel.oldImage = intent.getStringExtra("oldImage")!!
+                imageModel.text = intent.getStringExtra("text")!!
+                viewModel.imageModel = imageModel
+            }
+            if (imageModel.id == 0) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    GalleryPicker { uri ->
+                        imageSelected = uri
+                        val settingsList = PhotoEditorSettingsList(true)
+                            .configure<LoadSettings> {
+                                // Set the source as the Uri of the image to be loaded
+                                it.source = uri
+                            }
+                            .configure<PhotoEditorSaveSettings> {
+                                it.outputMode = OutputMode.EXPORT_ALWAYS
+                            }
+                            .configure<PhotoEditorSaveSettings> {
+                                val file = File(cacheDir, "imgly_photo.jpg")
+                                viewModel.fileUpdateFromEditor = file
+                                it.setOutputToUri(Uri.fromFile(file))
+                            }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                GalleryPicker{ uri ->
-                    imageSelected = uri
+                        editorLauncher.launch(settingsList)
+                        // Release the SettingsList once done
+                        settingsList.release()
+                    }
+
+                }
+            } else {
+                LaunchedEffect(key1 = true) {
+                    delay(200)
                     val settingsList = PhotoEditorSettingsList(true)
                         .configure<LoadSettings> {
                             // Set the source as the Uri of the image to be loaded
-                            it.source = uri
+                            it.source = Uri.parse(imageModel.oldImage)
                         }
                         .configure<PhotoEditorSaveSettings> {
                             it.outputMode = OutputMode.EXPORT_ALWAYS
@@ -134,8 +181,13 @@ class MainActivity : ComponentActivity() {
                             viewModel.fileUpdateFromEditor = file
                             it.setOutputToUri(Uri.fromFile(file))
                         }
+                    viewModel.imageModel?.text?.let {
+                        print("here->"+it)
+                        IMGLYFileReader(settingsList).readJson(it)
+                    }
 
-
+//                if(editorLauncher == null)
+//                    Log.d(TAG, "onCreate: ")
                     editorLauncher.launch(settingsList)
                     // Release the SettingsList once done
                     settingsList.release()
@@ -143,24 +195,14 @@ class MainActivity : ComponentActivity() {
 
             }
 
-            ImageList(viewModel = MainViewModel())
-
-//            PhotoEditorComposeTheme {
-//                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-//
-//                    Greeting(
-//                        name = "Android",
-//                        modifier = Modifier.padding(innerPadding)
-//                    )
-//                }
-//            }
         }
     }
 
 
-    private fun showMessage(msg: String){
-        Toast.makeText(this,"msg: $msg",Toast.LENGTH_LONG).show()
+    private fun showMessage(msg: String) {
+        Toast.makeText(this, "msg: $msg", Toast.LENGTH_LONG).show()
     }
+
 
     fun uriToFile(context: Context, uri: Uri): File? {
         val contentResolver: ContentResolver = context.contentResolver
@@ -187,9 +229,8 @@ class MainActivity : ComponentActivity() {
     }
 
 
-
     @Composable
-    fun GalleryPicker( openEditor: (uri: Uri) -> Unit) {
+    fun GalleryPicker(openEditor: (uri: Uri) -> Unit) {
         var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
         val galleryLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.GetContent(),
@@ -232,43 +273,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-}
-
-
-
-private  val TAG = "MainActivity"
-
-@Composable
-fun ImageList(viewModel: MainViewModel) {
-    Log.d(TAG, "ImageList: Start here")
-    val images = viewModel.images.value
-    Log.d(TAG, "ImageList: working here")
-    LazyColumn(modifier = Modifier.padding(20.dp)) {
-
-        items(images) { image ->
-            Text(text = image.text)
-            Spacer(Modifier.height(20.dp))
-
-        }
-    }
-    DisposableEffect(Unit) {
-        viewModel.getImages()
-        onDispose {}
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    PhotoEditorComposeTheme {
-        Greeting("Android")
-    }
 }

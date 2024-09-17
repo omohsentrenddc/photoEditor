@@ -18,12 +18,14 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
 
 class MainViewModel : ViewModel() {
+    var imageModel: ImageModel? = null
     var fileUpdateFromEditor: File? = null
 
     //    var jsonResult: String = ""
     var file: File? = null
     private val apiService = RetrofitInstance.api
     val images: MutableState<List<ImageModel>> = mutableStateOf(ImageResponse().images)
+    val isEdit: MutableState<Boolean> = mutableStateOf(false)
     private val TAG = "MainViewModel"
     fun getImages() {
         Log.d(TAG, "getImages: ")
@@ -41,21 +43,22 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    fun editImage(jsonResult: String) {
+    fun editImage(id: Int,jsonResult: String) {
         if (fileUpdateFromEditor != null && jsonResult.isNotEmpty()) {
             viewModelScope.launch {
                 fileUpdateFromEditor?.let {
                     try {
-                        val requestFile = it.asRequestBody("image/*".toMediaTypeOrNull())
-                        val imagePart =
-                            MultipartBody.Part.createFormData("newImage", it.name, requestFile)
+                        val newImageFile = RequestBody.create("image/*".toMediaTypeOrNull(), fileUpdateFromEditor!!)
+                        val newImagePart =
+                            MultipartBody.Part.createFormData("newImage", it.name, newImageFile)
+
                         val response = apiService.editImage(
-                            EditImageModelRequest(text = jsonResult, id = 1),
-                            imagePart
+                            getEditImageRequestBody(
+                                EditImageModelRequest(text = jsonResult, id = id)),
+                            newImagePart
                         )
                         Log.d(TAG, "getImages: here ${response.status}")
-                        if (response.images.isNotEmpty())
-                            images.value = response.images
+                        isEdit.value = true
 
                     } catch (e: Exception) {
                         // Handle errors here
@@ -76,6 +79,9 @@ class MainViewModel : ViewModel() {
 
         // Assuming EditImageModelRequest has fields like "title", "description", etc.
         map["text"] = createPartFromString(model.text)
+        model.id?.let {
+            map["id"] = createPartFromString(model.id.toString())
+        }
 
         // Add other fields from EditImageModelRequest similarly
         return map

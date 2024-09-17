@@ -26,8 +26,8 @@ interface ApiService {
     ): ImageResponse
 
     @Multipart
-    @POST("tests")
-    suspend fun editImage(@Body model : EditImageModelRequest,
+    @POST("test/update")
+    suspend fun editImage(@PartMap data: Map<String, @JvmSuppressWildcards RequestBody>,
                           @Part image: MultipartBody.Part
     ): ImageResponse
 
